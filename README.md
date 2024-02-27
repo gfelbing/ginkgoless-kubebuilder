@@ -1,8 +1,28 @@
 # ginkgoless-kubebuilder
-// TODO(user): Add simple overview of use/purpose
+
+Example controller demonstrating kubebuilder-generated controller tests w/o ginkgo.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+kubebuilder includes ginkgo in their scaffold, rendering it the de-facto standard testing framework for kubernetes controllers.
+This repo intends to demonstrate on how to use kubebuilder w/o ginkgo/gomega for testing.
+
+The base builds a quick [kubebuilder bootsrap](https://book.kubebuilder.io/quick-start.html#create-a-project):
+
+```bash
+kubebuilder init --domain my.domain --repo my.domain/guestbook
+kubebuilder create api --group webapp --version v1 --kind Guestbook
+make manifests
+```
+
+And afterwards replaces ginkgo/gomega from the [controller unit tests](./internal/controller/guestbook_controller_test.go) and the [e2e tests](./test/e2e/e2e_test.go), featuring:
+
+- net negative loc (+239, -280)
+- stateless table testing, no testenv bootstrapping necessary
+- faster tests:
+  - before: 13,21s user 2,46s system 155% cpu 10,061 total
+  - after: 6,57s user 1,31s system 392% cpu 2,007 total
+- less dependencies
 
 ## Getting Started
 
