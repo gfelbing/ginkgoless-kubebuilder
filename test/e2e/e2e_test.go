@@ -19,103 +19,129 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
+	"strings"
+	"testing"
 	"time"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 
 	"my.domain/guestbook/test/utils"
 )
 
 const namespace = "ginkgoless-kubebuilder-system"
 
-var _ = Describe("controller", Ordered, func() {
-	BeforeAll(func() {
-		By("installing prometheus operator")
-		Expect(utils.InstallPrometheusOperator()).To(Succeed())
-
-		By("installing the cert-manager")
-		Expect(utils.InstallCertManager()).To(Succeed())
-
-		By("creating manager namespace")
+func Test_E2E(t *testing.T) {
+	t.Run("prepare test env", func(t *testing.T) {
+		if err := utils.InstallPrometheusOperator(); err != nil {
+			t.Fatal("install prometheus:", err)
+		}
+		if err := utils.InstallCertManager(); err != nil {
+			t.Fatal("install certmanager:", err)
+		}
 		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, _ = utils.Run(cmd)
+		if _, err := utils.Run(cmd); err != nil {
+			t.Fatal("create namespace:", err)
+		}
 	})
-
-	AfterAll(func() {
-		By("uninstalling the Prometheus manager bundle")
+	t.Cleanup(func() {
 		utils.UninstallPrometheusOperator()
-
-		By("uninstalling the cert-manager bundle")
 		utils.UninstallCertManager()
-
-		By("removing manager namespace")
 		cmd := exec.Command("kubectl", "delete", "ns", namespace)
 		_, _ = utils.Run(cmd)
 	})
+	t.Run("operator", func(t *testing.T) {
+		var controllerPodName string
 
-	Context("Operator", func() {
-		It("should run successfully", func() {
-			var controllerPodName string
-			var err error
+		// projectimage stores the name of the image used in the example
+		var projectimage = "example.com/ginkgoless-kubebuilder:v0.0.1"
 
-			// projectimage stores the name of the image used in the example
-			var projectimage = "example.com/ginkgoless-kubebuilder:v0.0.1"
+		t.Log("building the manager(Operator) image")
+		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
+		if _, err := utils.Run(cmd); err != nil {
+			t.Error(err)
+			return
+		}
 
-			By("building the manager(Operator) image")
-			cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		t.Log("loading the the manager(Operator) image on Kind")
+		if err := utils.LoadImageToKindClusterWithName(projectimage); err != nil {
+			t.Error(err)
+			return
+		}
 
-			By("loading the the manager(Operator) image on Kind")
-			err = utils.LoadImageToKindClusterWithName(projectimage)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		t.Log("installing CRDs")
+		cmd = exec.Command("make", "install")
+		if _, err := utils.Run(cmd); err != nil {
+			t.Error(err)
+			return
+		}
 
-			By("installing CRDs")
-			cmd = exec.Command("make", "install")
-			_, err = utils.Run(cmd)
+		t.Log("deploying the controller-manager")
+		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
+		if _, err := utils.Run(cmd); err != nil {
+			t.Error(err)
+			return
+		}
 
-			By("deploying the controller-manager")
-			cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		t.Log("validating that the controller-manager pod is running as expected")
+		verifyControllerUp := func() error {
+			// Get pod name
 
-			By("validating that the controller-manager pod is running as expected")
-			verifyControllerUp := func() error {
-				// Get pod name
+			cmd = exec.Command("kubectl", "get",
+				"pods", "-l", "control-plane=controller-manager",
+				"-o", "go-template={{ range .items }}"+
+					"{{ if not .metadata.deletionTimestamp }}"+
+					"{{ .metadata.name }}"+
+					"{{ \"\\n\" }}{{ end }}{{ end }}",
+				"-n", namespace,
+			)
 
-				cmd = exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
+			podOutput, err := utils.Run(cmd)
+			if err != nil {
+				return fmt.Errorf("pod output: %w", err)
+			}
+			podNames := utils.GetNonEmptyLines(string(podOutput))
+			if len(podNames) != 1 {
+				return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
+			}
+			controllerPodName = podNames[0]
+			substr := "controller-manager"
+			if strings.Contains(controllerPodName, substr) {
+				return fmt.Errorf("expected %q in %q", substr, controllerPodName)
+			}
 
-				podOutput, err := utils.Run(cmd)
-				ExpectWithOffset(2, err).NotTo(HaveOccurred())
-				podNames := utils.GetNonEmptyLines(string(podOutput))
-				if len(podNames) != 1 {
-					return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
-				}
-				controllerPodName = podNames[0]
-				ExpectWithOffset(2, controllerPodName).Should(ContainSubstring("controller-manager"))
+			// Validate pod status
+			cmd = exec.Command("kubectl", "get",
+				"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
+				"-n", namespace,
+			)
+			status, err := utils.Run(cmd)
+			if err != nil {
+				return fmt.Errorf("get pods: %w", err)
+			}
+			if string(status) != "Running" {
+				return fmt.Errorf("controller pod in %s status", status)
+			}
+			return nil
+		}
+		if err := eventually(verifyControllerUp, time.Minute, time.Second); err != nil {
+			t.Error("verify controller up:", err)
+		}
+	})
+}
 
-				// Validate pod status
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				status, err := utils.Run(cmd)
-				ExpectWithOffset(2, err).NotTo(HaveOccurred())
-				if string(status) != "Running" {
-					return fmt.Errorf("controller pod in %s status", status)
-				}
+func eventually(f func() error, timeout time.Duration, intervall time.Duration) error {
+	ticker := time.NewTicker(intervall)
+	defer ticker.Stop()
+	to := time.NewTimer(timeout)
+	defer to.Stop()
+	var err error
+	for {
+		select {
+		case <-to.C:
+			return fmt.Errorf("timeout %s reached: %w", timeout, err)
+		case <-ticker.C:
+			err = f()
+			if err == nil {
 				return nil
 			}
-			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
-
-		})
-	})
-})
+		}
+	}
+}

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +32,12 @@ import (
 type GuestbookReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+type FailSpecError struct{}
+
+func (*FailSpecError) Error() string {
+	return "spec set to fail"
 }
 
 //+kubebuilder:rbac:groups=webapp.my.domain,resources=guestbooks,verbs=get;list;watch;create;update;patch;delete
@@ -49,7 +56,20 @@ type GuestbookReconciler struct {
 func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	guestbook := &webappv1.Guestbook{}
+	if err := r.Client.Get(ctx, req.NamespacedName, guestbook); err != nil {
+		return ctrl.Result{}, fmt.Errorf("get obj: %w", err)
+	}
+
+	if guestbook.Spec.Foo == "fail" {
+		return ctrl.Result{}, &FailSpecError{}
+	}
+
+	patch := client.MergeFrom(guestbook.DeepCopy())
+	guestbook.Status.Done = true
+	if err := r.Client.Patch(ctx, guestbook, patch); err != nil {
+		return ctrl.Result{}, fmt.Errorf("patch status: %v, %w", guestbook, err)
+	}
 
 	return ctrl.Result{}, nil
 }

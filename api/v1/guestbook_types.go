@@ -29,6 +29,7 @@ type GuestbookSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Guestbook. Edit guestbook_types.go to remove/update
+	// Setting it to 'fail' causes the reconciler to fail, for demo purposes
 	Foo string `json:"foo,omitempty"`
 }
 
@@ -36,6 +37,7 @@ type GuestbookSpec struct {
 type GuestbookStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	Done bool `json:"done,omitempty"`
 }
 
 //+kubebuilder:object:root=true
