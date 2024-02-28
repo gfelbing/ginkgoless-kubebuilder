@@ -34,17 +34,24 @@ import (
 
 func Test_Reconcile(t *testing.T) {
 	tests := []struct {
-		Name            string
-		Obj             *guestbookv1.Guestbook
-		State           []client.Object
-		Want            ctrl.Result
-		WantErr         error
+		// Name of the testcase
+		Name string
+		// Obj to reconcile
+		Obj *guestbookv1.Guestbook
+		// Previous state in cluster
+		State []client.Object
+		// Amount of reconciliation loops, defaults to 1
+		Loops int
+		// Desired result after all loops
+		Want ctrl.Result
+		// Desired error after all loops
+		WantErr error
+		// Sideeffects to assert after reconciliation
 		WantSideEffects func(ctx context.Context, r *GuestbookReconciler) error
 	}{
 		{
 			Name: "valid",
 			Obj:  fixtureGuestbook(),
-			Want: ctrl.Result{},
 			WantSideEffects: func(ctx context.Context, r *GuestbookReconciler) error {
 				got := &guestbookv1.Guestbook{}
 				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(fixtureGuestbook()), got); err != nil {
@@ -67,7 +74,7 @@ func Test_Reconcile(t *testing.T) {
 	t.Parallel()
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			// prepare context, scheme and fakeclient
+			// prepare context, scheme, fakeclient and reconciler
 			ctx := context.Background()
 			sc := scheme.Scheme
 			if err := guestbookv1.AddToScheme(sc); err != nil {
@@ -78,26 +85,30 @@ func Test_Reconcile(t *testing.T) {
 				WithObjects(tt.Obj).
 				WithObjects(tt.State...).
 				Build()
-
-			// create the reconciler and run it
 			reconciler := GuestbookReconciler{
 				Client: c,
 				Scheme: sc,
 			}
-			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Namespace: tt.Obj.Namespace,
-					Name:      tt.Obj.Name,
-				},
-			})
+
+			// run the reconciliation
+			var got ctrl.Result
+			var gotErr error
+			for i := 0; i < min(1, tt.Loops); i++ {
+				got, gotErr = reconciler.Reconcile(ctx, ctrl.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: tt.Obj.Namespace,
+						Name:      tt.Obj.Name,
+					},
+				})
+			}
 
 			// assert error, reconcile result and state
-			if !errors.Is(err, tt.WantErr) {
-				t.Errorf("gotErr: %s, want: %s", err, tt.WantErr)
+			if !errors.Is(gotErr, tt.WantErr) {
+				t.Errorf("gotErr: %s\nwant: %s", gotErr, tt.WantErr)
 				return
 			}
-			if diff := cmp.Diff(result, tt.Want); diff != "" {
-				t.Errorf("got: %v\nwant: %v\ndiff: %s", result, tt.Want, diff)
+			if diff := cmp.Diff(got, tt.Want); diff != "" {
+				t.Errorf("got: %v\nwant: %v\ndiff: %s", got, tt.Want, diff)
 			}
 			if tt.WantSideEffects != nil {
 				if err := tt.WantSideEffects(ctx, &reconciler); err != nil {
