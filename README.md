@@ -15,14 +15,7 @@ kubebuilder create api --group webapp --version v1 --kind Guestbook
 make manifests
 ```
 
-And afterwards replaces ginkgo/gomega from the [controller unit tests](./internal/controller/guestbook_controller_test.go) and the [e2e tests](./test/e2e/e2e_test.go), featuring:
-
-- net negative loc (+239, -280)
-- stateless table testing, no testenv bootstrapping necessary
-- faster tests:
-  - before: 13,21s user 2,46s system 155% cpu 10,061 total
-  - after: 6,57s user 1,31s system 392% cpu 2,007 total
-- less dependencies
+And afterwards replaces ginkgo/gomega from the [controller unit tests](./internal/controller/guestbook_controller_test.go) and the [e2e tests](./test/e2e/e2e_test.go).
 
 ## Getting Started
 

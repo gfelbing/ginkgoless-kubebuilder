@@ -54,12 +54,13 @@ func (*FailSpecError) Error() string {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.0/pkg/reconcile
 func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	l := log.FromContext(ctx)
 
 	guestbook := &webappv1.Guestbook{}
 	if err := r.Client.Get(ctx, req.NamespacedName, guestbook); err != nil {
 		return ctrl.Result{}, fmt.Errorf("get obj: %w", err)
 	}
+	l.Info("reconcile", "obj", guestbook)
 
 	if guestbook.Spec.Foo == "fail" {
 		return ctrl.Result{}, &FailSpecError{}
@@ -67,9 +68,10 @@ func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	patch := client.MergeFrom(guestbook.DeepCopy())
 	guestbook.Status.Done = true
-	if err := r.Client.Patch(ctx, guestbook, patch); err != nil {
+	if err := r.Client.Status().Patch(ctx, guestbook, patch); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patch status: %v, %w", guestbook, err)
 	}
+	l.Info("patched", "patch", patch)
 
 	return ctrl.Result{}, nil
 }

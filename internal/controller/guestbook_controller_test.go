@@ -20,16 +20,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	guestbookv1 "my.domain/guestbook/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func Test_Reconcile(t *testing.T) {
@@ -64,6 +66,25 @@ func Test_Reconcile(t *testing.T) {
 			},
 		},
 		{
+			Name: "custom namespace",
+			State: []client.Object{
+				fixtureNamespace("custom"),
+			},
+			Obj: fixtureGuestbook(func(g *guestbookv1.Guestbook) {
+				g.Namespace = "custom"
+			}),
+			WantSideEffects: func(ctx context.Context, r *GuestbookReconciler) error {
+				got := &guestbookv1.Guestbook{}
+				if err := r.Client.Get(ctx, types.NamespacedName{Namespace: "custom", Name: "my-guestbook"}, got); err != nil {
+					return err
+				}
+				if !got.Status.Done {
+					return fmt.Errorf("status should be done, was %t", got.Status.Done)
+				}
+				return nil
+			},
+		},
+		{
 			Name: "spec'd to fail",
 			Obj: fixtureGuestbook(func(g *guestbookv1.Guestbook) {
 				g.Spec.Foo = "fail"
@@ -71,34 +92,60 @@ func Test_Reconcile(t *testing.T) {
 			WantErr: &FailSpecError{},
 		},
 	}
-	t.Parallel()
+
+	// prepare context, scheme, fakeclient and reconciler
+	ctx := context.Background()
+	if err := guestbookv1.AddToScheme(scheme.Scheme); err != nil {
+		t.Fatalf("init scheme: %s", err)
+	}
+	env := envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	cfg, err := env.Start()
+	if err != nil {
+		t.Fatalf("init envtest: %s", err)
+	}
+	defer func() {
+		if err := env.Stop(); err != nil {
+			t.Fatal("stop testenv:", err)
+		}
+	}()
+	c, err := client.New(cfg, client.Options{})
+	if err != nil {
+		t.Fatalf("init client: %s", err)
+	}
+	reconciler := GuestbookReconciler{Client: c}
+
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			// prepare context, scheme, fakeclient and reconciler
-			ctx := context.Background()
-			sc := scheme.Scheme
-			if err := guestbookv1.AddToScheme(sc); err != nil {
-				t.Fatalf("init scheme: %s", err)
+			// create state & obj
+			for _, obj := range tt.State {
+				obj := obj
+				if err := c.Create(ctx, obj); err != nil {
+					t.Fatalf("create obj: %s", err)
+				}
+				defer func() {
+					if err := c.Delete(ctx, obj); err != nil {
+						t.Fatalf("create obj: %s", err)
+					}
+				}()
 			}
-			c := fake.NewClientBuilder().
-				WithScheme(sc).
-				WithObjects(tt.Obj).
-				WithObjects(tt.State...).
-				Build()
-			reconciler := GuestbookReconciler{
-				Client: c,
-				Scheme: sc,
+			if err := c.Create(ctx, tt.Obj); err != nil {
+				t.Fatalf("create obj: %s", err)
 			}
+			defer func() {
+				if err := c.Delete(ctx, tt.Obj); err != nil {
+					t.Fatalf("create obj: %s", err)
+				}
+			}()
 
 			// run the reconciliation
 			var got ctrl.Result
 			var gotErr error
-			for i := 0; i < min(1, tt.Loops); i++ {
+			for i := 0; i < max(1, tt.Loops); i++ {
 				got, gotErr = reconciler.Reconcile(ctx, ctrl.Request{
-					NamespacedName: types.NamespacedName{
-						Namespace: tt.Obj.Namespace,
-						Name:      tt.Obj.Name,
-					},
+					NamespacedName: client.ObjectKeyFromObject(tt.Obj),
 				})
 			}
 
@@ -124,6 +171,18 @@ func fixtureGuestbook(mods ...func(*guestbookv1.Guestbook)) *guestbookv1.Guestbo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-guestbook",
 			Namespace: "default",
+		},
+	}
+	for _, mod := range mods {
+		mod(f)
+	}
+	return f
+}
+
+func fixtureNamespace(name string, mods ...func(*corev1.Namespace)) *corev1.Namespace {
+	f := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
 		},
 	}
 	for _, mod := range mods {
