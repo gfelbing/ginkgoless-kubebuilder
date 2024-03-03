@@ -20,12 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	guestbookv1 "github.com/gfelbing/ginkgoless-kubebuilder/example/api/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	webappv1 "my.domain/guestbook/api/v1"
 )
 
 // GuestbookReconciler reconciles a Guestbook object
@@ -40,9 +39,9 @@ func (*FailSpecError) Error() string {
 	return "spec set to fail"
 }
 
-//+kubebuilder:rbac:groups=webapp.my.domain,resources=guestbooks,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=webapp.my.domain,resources=guestbooks/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=webapp.my.domain,resources=guestbooks/finalizers,verbs=update
+//+kubebuilder:rbac:groups=guestbook.gfelbing.github.io,resources=guestbooks,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=guestbook.gfelbing.github.io,resources=guestbooks/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=guestbook.gfelbing.github.io,resources=guestbooks/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -56,7 +55,7 @@ func (*FailSpecError) Error() string {
 func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	guestbook := &webappv1.Guestbook{}
+	guestbook := &guestbookv1.Guestbook{}
 	if err := r.Client.Get(ctx, req.NamespacedName, guestbook); err != nil {
 		return ctrl.Result{}, fmt.Errorf("get obj: %w", err)
 	}
@@ -79,6 +78,6 @@ func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // SetupWithManager sets up the controller with the Manager.
 func (r *GuestbookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&webappv1.Guestbook{}).
+		For(&guestbookv1.Guestbook{}).
 		Complete(r)
 }

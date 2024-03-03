@@ -1,4 +1,4 @@
-package utils
+package envtesthelper
 
 import (
 	"context"

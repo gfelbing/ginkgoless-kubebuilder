@@ -12,7 +12,7 @@ metadata:
   name: guestbook-viewer-role
 rules:
 - apiGroups:
-  - webapp.my.domain
+  - guestbook.gfelbing.github.io
   resources:
   - guestbooks
   verbs:
@@ -20,7 +20,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - webapp.my.domain
+  - guestbook.gfelbing.github.io
   resources:
   - guestbooks/status
   verbs:

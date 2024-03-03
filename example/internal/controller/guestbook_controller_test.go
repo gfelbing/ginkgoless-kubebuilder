@@ -22,17 +22,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gfelbing/ginkgoless-kubebuilder/envtesthelper"
+	guestbookv1 "github.com/gfelbing/ginkgoless-kubebuilder/example/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	guestbookv1 "my.domain/guestbook/api/v1"
-	"my.domain/guestbook/test/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func Test_Reconcile(t *testing.T) {
-	tests := []utils.TestCase[*GuestbookReconciler]{
+	tests := []envtesthelper.TestCase[*GuestbookReconciler]{
 		{
 			Name:            "valid",
 			Obj:             fixtureGuestbook(),
@@ -60,7 +60,7 @@ func Test_Reconcile(t *testing.T) {
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-	utils.RunEnvTest(
+	envtesthelper.RunEnvTest(
 		t, guestbookv1.AddToScheme, env,
 		func(c client.Client) *GuestbookReconciler {
 			return &GuestbookReconciler{Client: c}

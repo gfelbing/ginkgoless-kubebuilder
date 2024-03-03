@@ -7,7 +7,7 @@ Example controller demonstrating kubebuilder-generated controller tests w/o gink
 kubebuilder includes ginkgo in their scaffold, rendering it the de-facto standard testing framework for kubernetes controllers.
 This repo intends to demonstrate on how to use kubebuilder w/o ginkgo/gomega for testing.
 
-The base builds a quick [kubebuilder bootsrap](https://book.kubebuilder.io/quick-start.html#create-a-project):
+The [example](./example) is based on a quick [kubebuilder bootsrap](https://book.kubebuilder.io/quick-start.html#create-a-project):
 
 ```bash
 kubebuilder init --domain my.domain --repo my.domain/guestbook
@@ -15,14 +15,14 @@ kubebuilder create api --group webapp --version v1 --kind Guestbook
 make manifests
 ```
 
-And afterwards replaces ginkgo/gomega from the [controller unit tests](./internal/controller/guestbook_controller_test.go) and the [e2e tests](./test/e2e/e2e_test.go).
+And afterwards replaces ginkgo/gomega from the [controller tests](./example/internal/controller/guestbook_controller_test.go) and the [e2e tests](./example/test/e2e/e2e_test.go).
 
 ## Getting Started
 
 If you want to use this pattern in your controller:
 
-- Make [envtest.go](./test/utils/envtest.go) available in your project 
-- Write your test, see [example](./internal/controller/guestbook_controller_test.go)
+- Make the [envtesthelper](./envtesthelper/envtesthelper.go) available in your project (either copypaste the gist, or add the [module](./envtesthelper/go.mod) as a dependency)
+- Write your test as a simple table test, see [example](./example/internal/controller/guestbook_controller_test.go)
 
 ## Contributing
 // TODO(user): Add detailed information on how you would like others to contribute to this project

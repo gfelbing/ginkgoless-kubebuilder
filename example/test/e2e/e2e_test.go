@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"my.domain/guestbook/test/utils"
+	"github.com/gfelbing/ginkgoless-kubebuilder/example/test/utils"
 )
 
 const namespace = "ginkgoless-kubebuilder-system"

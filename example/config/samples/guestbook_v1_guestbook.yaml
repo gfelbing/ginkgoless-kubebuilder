@@ -1,4 +1,4 @@
-apiVersion: webapp.my.domain/v1
+apiVersion: guestbook.my.domain/v1
 kind: Guestbook
 metadata:
   labels:
