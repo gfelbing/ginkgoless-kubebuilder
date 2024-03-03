@@ -18,52 +18,25 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	guestbookv1 "my.domain/guestbook/api/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"my.domain/guestbook/test/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func Test_Reconcile(t *testing.T) {
-	tests := []struct {
-		// Name of the testcase
-		Name string
-		// Obj to reconcile
-		Obj *guestbookv1.Guestbook
-		// Previous state in cluster
-		State []client.Object
-		// Amount of reconciliation loops, defaults to 1
-		Loops int
-		// Desired result after all loops
-		Want ctrl.Result
-		// Desired error after all loops
-		WantErr error
-		// Sideeffects to assert after reconciliation
-		WantSideEffects func(ctx context.Context, r *GuestbookReconciler) error
-	}{
+	tests := []utils.TestCase[*GuestbookReconciler]{
 		{
-			Name: "valid",
-			Obj:  fixtureGuestbook(),
-			WantSideEffects: func(ctx context.Context, r *GuestbookReconciler) error {
-				got := &guestbookv1.Guestbook{}
-				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(fixtureGuestbook()), got); err != nil {
-					return err
-				}
-				if !got.Status.Done {
-					return fmt.Errorf("status should be done, was %t", got.Status.Done)
-				}
-				return nil
-			},
+			Name:            "valid",
+			Obj:             fixtureGuestbook(),
+			WantSideEffects: assertStatusDone(types.NamespacedName{Namespace: "default", Name: "my-guestbook"}),
 		},
 		{
 			Name: "custom namespace",
@@ -73,16 +46,7 @@ func Test_Reconcile(t *testing.T) {
 			Obj: fixtureGuestbook(func(g *guestbookv1.Guestbook) {
 				g.Namespace = "custom"
 			}),
-			WantSideEffects: func(ctx context.Context, r *GuestbookReconciler) error {
-				got := &guestbookv1.Guestbook{}
-				if err := r.Client.Get(ctx, types.NamespacedName{Namespace: "custom", Name: "my-guestbook"}, got); err != nil {
-					return err
-				}
-				if !got.Status.Done {
-					return fmt.Errorf("status should be done, was %t", got.Status.Done)
-				}
-				return nil
-			},
+			WantSideEffects: assertStatusDone(types.NamespacedName{Namespace: "custom", Name: "my-guestbook"}),
 		},
 		{
 			Name: "spec'd to fail",
@@ -92,78 +56,17 @@ func Test_Reconcile(t *testing.T) {
 			WantErr: &FailSpecError{},
 		},
 	}
-
-	// prepare context, scheme, fakeclient and reconciler
-	ctx := context.Background()
-	if err := guestbookv1.AddToScheme(scheme.Scheme); err != nil {
-		t.Fatalf("init scheme: %s", err)
-	}
-	env := envtest.Environment{
+	env := &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-	cfg, err := env.Start()
-	if err != nil {
-		t.Fatalf("init envtest: %s", err)
-	}
-	defer func() {
-		if err := env.Stop(); err != nil {
-			t.Fatal("stop testenv:", err)
-		}
-	}()
-	c, err := client.New(cfg, client.Options{})
-	if err != nil {
-		t.Fatalf("init client: %s", err)
-	}
-	reconciler := GuestbookReconciler{Client: c}
-
-	for _, tt := range tests {
-		t.Run(tt.Name, func(t *testing.T) {
-			// create state & obj
-			for _, obj := range tt.State {
-				obj := obj
-				if err := c.Create(ctx, obj); err != nil {
-					t.Fatalf("create obj: %s", err)
-				}
-				defer func() {
-					if err := c.Delete(ctx, obj); err != nil {
-						t.Fatalf("create obj: %s", err)
-					}
-				}()
-			}
-			if err := c.Create(ctx, tt.Obj); err != nil {
-				t.Fatalf("create obj: %s", err)
-			}
-			defer func() {
-				if err := c.Delete(ctx, tt.Obj); err != nil {
-					t.Fatalf("create obj: %s", err)
-				}
-			}()
-
-			// run the reconciliation
-			var got ctrl.Result
-			var gotErr error
-			for i := 0; i < max(1, tt.Loops); i++ {
-				got, gotErr = reconciler.Reconcile(ctx, ctrl.Request{
-					NamespacedName: client.ObjectKeyFromObject(tt.Obj),
-				})
-			}
-
-			// assert error, reconcile result and state
-			if !errors.Is(gotErr, tt.WantErr) {
-				t.Errorf("gotErr: %s\nwant: %s", gotErr, tt.WantErr)
-				return
-			}
-			if diff := cmp.Diff(got, tt.Want); diff != "" {
-				t.Errorf("got: %v\nwant: %v\ndiff: %s", got, tt.Want, diff)
-			}
-			if tt.WantSideEffects != nil {
-				if err := tt.WantSideEffects(ctx, &reconciler); err != nil {
-					t.Error("failed sideeffect:", err)
-				}
-			}
-		})
-	}
+	utils.RunEnvTest(
+		t, guestbookv1.AddToScheme, env,
+		func(c client.Client) *GuestbookReconciler {
+			return &GuestbookReconciler{Client: c}
+		},
+		tests,
+	)
 }
 
 func fixtureGuestbook(mods ...func(*guestbookv1.Guestbook)) *guestbookv1.Guestbook {
@@ -189,4 +92,17 @@ func fixtureNamespace(name string, mods ...func(*corev1.Namespace)) *corev1.Name
 		mod(f)
 	}
 	return f
+}
+
+func assertStatusDone(namespacedName types.NamespacedName) func(context.Context, *GuestbookReconciler) error {
+	return func(ctx context.Context, r *GuestbookReconciler) error {
+		got := &guestbookv1.Guestbook{}
+		if err := r.Client.Get(ctx, namespacedName, got); err != nil {
+			return err
+		}
+		if !got.Status.Done {
+			return fmt.Errorf("status should be done, was %t", got.Status.Done)
+		}
+		return nil
+	}
 }
